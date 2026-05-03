@@ -1,0 +1,16 @@
+[Unit]
+Description=TVPass Schedule HTTP Service
+After=network.target
+
+[Service]
+Type=simple
+User=sanchobot
+WorkingDirectory=/home/sanchobot/tvpass-scheduler
+ExecStart=/usr/bin/python3 /home/sanchobot/tvpass-scheduler/app.py --port 8765
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/sanchobot/tvpass-scheduler/app.log
+StandardError=append:/home/sanchobot/tvpass-scheduler/app.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TV Schedule Timegrid — TVPass</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #242836;
+      --surface3: #2d3245;
+      --border: #2e3347;
+      --accent: #6c8aff;
+      --accent2: #ff8c42;
+      --live: #ff4757;
+      --text: #e8eaf0;
+      --muted: #8b90a0;
+      --col-now: rgba(108,138,255,0.06);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      min-height: 100vh;
+    }
+
+    /* ---- Header ---- */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    header .brand { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: -0.3px; }
+    header .brand span { color: var(--muted); font-weight: 400; }
+    .header-meta { display: flex; gap: 20px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+    .header-meta strong { color: var(--text); }
+    .header-meta .live-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--live); margin-right: 4px; animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .channel-filter {
+      padding: 10px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .channel-filter label { color: var(--muted); font-size: 12px; }
+    .channel-filter select {
+      background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer;
+    }
+
+    /* ---- Grid wrapper ---- */
+    .grid-wrapper {
+      padding: 16px 24px 40px;
+      overflow-x: auto;
+      position: relative;
+    }
+
+    /* ---- Now line — horizontal bar at current time row ---- */
+    #now-line {
+      position: absolute;
+      left: 0;
+      height: 2px;
+      background: var(--live);
+      z-index: 30;
+      pointer-events: none;
+      transform: translateY(-50%);
+      box-shadow: 0 0 8px var(--live);
+      width: 100%;
+    }
+    #now-line::before {
+      content: attr(data-label);
+      position: absolute;
+      left: 0;
+      top: -20px;
+      background: var(--live);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 3px;
+      white-space: nowrap;
+    }
+
+    /* ---- Timegrid ---- */
+    .timegrid {
+      border-collapse: collapse;
+      min-width: 800px;
+      width: 100%;
+    }
+    .timegrid th, .timegrid td { border: 1px solid var(--border); vertical-align: top; }
+    .timegrid th.time-col {
+      background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 600;
+      text-align: right; padding: 6px 10px; white-space: nowrap;
+      width: 64px; min-width: 64px;
+    }
+    .timegrid th.date-col {
+      background: var(--surface); color: var(--text); font-size: 12px; font-weight: 600;
+      text-align: center; padding: 8px 12px; white-space: nowrap; min-width: 160px;
+    }
+    .timegrid th.date-col.today { color: var(--accent); border-bottom: 2px solid var(--accent); }
+    .timegrid td.cell.col-now, .timegrid td.cell.col-now .slot-program { background: var(--col-now); }
+    .timegrid td.cell.col-now .slot-program.live {
+      background: rgba(255,71,87,0.15);
+      border-left-color: var(--live);
+    }
+    .timegrid td.cell { background: var(--bg); padding: 5px 8px; min-height: 56px; }
+
+    /* ---- Slot program ---- */
+    .slot-program {
+      background: var(--surface); border-left: 3px solid var(--accent);
+      border-radius: 3px; padding: 4px 7px; margin-bottom: 4px; font-size: 12px; line-height: 1.4;
+    }
+    .slot-program:last-child { margin-bottom: 0; }
+    .slot-program .show {
+      font-weight: 600; color: var(--text); white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    .slot-program .episode { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .slot-program .time { font-size: 10px; color: var(--accent2); margin-top: 2px; }
+    .slot-program.live { border-left-color: var(--live); background: rgba(255,71,87,0.08); }
+    .slot-program.live .show::after { content: " \25CF"; color: var(--live); font-size: 9px; }
+    .cell.empty { background: var(--bg); }
+
+    /* ---- Hover video card ---- */
+    #hover-card {
+      display: none;
+      position: fixed;
+      z-index: 200;
+      width: 360px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.7);
+      overflow: hidden;
+      flex-direction: column;
+    }
+    #hover-card.visible { display: flex; }
+
+    /* Card header bar */
+    .hc-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 10px;
+      background: var(--surface3);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      gap: 8px;
+    }
+    .hc-topbar-left { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+    .hc-channel-name {
+      font-size: 12px; font-weight: 700; color: var(--accent);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .hc-slot-info { font-size: 10px; color: var(--muted); }
+    .hc-topbar-btns { display: flex; gap: 5px; flex-shrink: 0; }
+
+    /* Icon buttons (video controls) */
+    .hc-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px;
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--muted); border-radius: 5px; cursor: pointer;
+      transition: all 0.15s; padding: 0;
+    }
+    .hc-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .hc-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .hc-btn svg { width: 14px; height: 14px; }
+
+    /* Program selector dropdown */
+    .hc-prog-select {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .hc-prog-select label { font-size: 10px; color: var(--muted); flex-shrink: 0; }
+    .hc-prog-select select {
+      flex: 1; min-width: 0; background: var(--surface2);
+      color: var(--text); border: 1px solid var(--border);
+      border-radius: 4px; padding: 2px 4px; font-size: 11px; cursor: pointer;
+    }
+
+    /* Video area */
+    .hc-video-area {
+      position: relative;
+      background: #000;
+      width: 100%;
+      aspect-ratio: 16/9;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .hc-video-area video {
+      width: 100%; height: 100%; display: block; object-fit: contain;
+    }
+
+    /* Loading spinner */
+    .hc-spinner {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 8px; background: rgba(0,0,0,0.7);
+      color: var(--muted); font-size: 11px;
+    }
+    .hc-spinner-ring {
+      width: 28px; height: 28px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Stream error state */
+    .hc-stream-error {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 6px; background: rgba(0,0,0,0.85);
+      color: var(--muted); font-size: 11px;
+      text-align: center; padding: 12px;
+    }
+    .hc-stream-error .err-icon { font-size: 20px; }
+    .hc-stream-error .err-msg { color: var(--live); font-size: 12px; }
+
+    /* Program info below video */
+    .hc-prog-info {
+      padding: 8px 10px;
+      border-top: 1px solid var(--border);
+      min-height: 0;
+    }
+    .hc-prog-row1 {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 8px; margin-bottom: 3px;
+    }
+    .hc-prog-show {
+      font-size: 12px; font-weight: 700; color: var(--text);
+      line-height: 1.3; flex: 1; min-width: 0;
+    }
+    .hc-live-badge {
+      font-size: 9px; font-weight: 700; background: var(--live);
+      color: #fff; padding: 1px 5px; border-radius: 3px; flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .hc-prog-ep { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+    .hc-prog-time { font-size: 10px; color: var(--accent2); }
+    .hc-prog-desc {
+      font-size: 11px; color: var(--muted); line-height: 1.5;
+      margin-top: 4px;
+      display: -webkit-box; -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical; overflow: hidden;
+    }
+
+    /* Status bar */
+    .hc-status {
+      padding: 4px 10px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      font-size: 10px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+    .hc-status.error { color: var(--live); }
+
+    /* ---- Persistent video overlay — top-right ---- */
+    #video-overlay {
+      display: none;
+      position: fixed;
+      top: 8px;
+      right: 8px;
+      width: 280px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+      z-index: 300;
+      overflow: hidden;
+      flex-direction: column;
+    }
+    #video-overlay.visible { display: flex; }
+
+    /* Top bar */
+    .vo-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      background: var(--surface3);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      gap: 6px;
+    }
+    .vo-channel {
+      font-size: 12px; font-weight: 700; color: var(--accent);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
+    }
+    .vo-btns { display: flex; gap: 4px; flex-shrink: 0; }
+
+    /* Video */
+    .vo-video-area {
+      position: relative;
+      background: #000;
+      width: 100%;
+      aspect-ratio: 16/9;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .vo-video-area video {
+      width: 100%; height: 100%; display: block; object-fit: contain;
+    }
+
+    /* Spinner / error */
+    .vo-spinner {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 6px; background: rgba(0,0,0,0.75);
+      color: var(--muted); font-size: 11px;
+    }
+    .vo-spinner-ring {
+      width: 24px; height: 24px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .vo-stream-error {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 6px; background: rgba(0,0,0,0.85);
+      color: var(--muted); font-size: 11px;
+      text-align: center; padding: 10px;
+    }
+    .vo-stream-error .err-icon { font-size: 18px; }
+    .vo-stream-error .err-msg { color: var(--live); font-size: 12px; }
+
+    /* Status bar */
+    .vo-status {
+      padding: 4px 10px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      font-size: 10px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+    .vo-status.error { color: var(--live); }
+
+    /* ---- Footer ---- */
+    footer {
+      text-align: center; padding: 16px; color: var(--muted); font-size: 11px;
+      border-top: 1px solid var(--border);
+    }
+    footer a { color: var(--accent); }
+
+    /* ---- Responsive ---- */
+    @media (max-width: 768px) {
+      .timegrid { font-size: 11px; }
+      .grid-wrapper { padding: 8px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">TVPass <span>/ Schedule Timegrid</span></div>
+  <div class="header-meta">
+    <span>Programs: <strong>{{ program_count }}</strong></span>
+    <span>Channels: <strong>{{ channel_slugs|length }}</strong></span>
+    <span>Scrape run: <strong>#{{ scrape_count }}</strong></span>
+    <span>Last updated: <strong>{{ last_scrape[:16] if last_scrape else '—' }}</strong></span>
+    <span>Generated: <strong>{{ now_utc }}</strong></span>
+  </div>
+</header>
+
+<div class="channel-filter">
+  <label for="ch-filter">Filter channel:</label>
+  <select id="ch-filter" onchange="filterChannel(this.value)">
+    <option value="">— All channels —</option>
+    {% for slug in channel_slugs %}
+    <option value="{{ slug }}">{{ channel_names.get(slug, slug) }}</option>
+    {% endfor %}
+  </select>
+</div>
+
+<div class="grid-wrapper" id="grid-wrapper">
+  <div id="now-line" data-label=""></div>
+  <table class="timegrid" id="tg">
+    <thead>
+      <tr>
+        <th class="time-col">ET</th>
+        {% for date in all_dates %}
+        <th class="date-col{% if date == today_ny %} today{% endif %}">{{ date }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for hour in hours %}
+      <tr>
+        <td class="time-col">{{ "%02d:00"|format(hour) }}</td>
+        {% for date in all_dates %}
+        <td class="cell" id="c-{{ date }}-{{ "%02d"|format(hour) }}"
+            data-date="{{ date }}" data-hour="{{ "%02d"|format(hour) }}">
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Hover info card (no video — video lives in the persistent overlay top-right) -->
+<div id="hover-card">
+  <!-- Top bar: channel + close -->
+  <div class="hc-topbar">
+    <div class="hc-topbar-left">
+      <span class="hc-channel-name" id="hc-channel-name">—</span>
+      <span class="hc-slot-info" id="hc-slot-info">—</span>
+    </div>
+    <div class="hc-topbar-btns">
+      <!-- Close -->
+      <button class="hc-btn" title="Close" onclick="hideHoverCard()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Programme selector (shown when multiple programmes in slot) -->
+  <div class="hc-prog-select" id="hc-prog-select" style="display:none">
+    <label>Programme:</label>
+    <select id="hc-prog-dropdown" onchange="hcSelectProgram(this.value)"></select>
+  </div>
+
+  <!-- Programme info only (no video) -->
+  <div class="hc-prog-info" id="hc-prog-info">
+    <div class="hc-prog-row1">
+      <span class="hc-prog-show" id="hc-prog-show">—</span>
+      <span class="hc-live-badge" id="hc-live-badge" style="display:none">LIVE</span>
+    </div>
+    <div class="hc-prog-ep" id="hc-prog-ep"></div>
+    <div class="hc-prog-time" id="hc-prog-time"></div>
+    <div class="hc-prog-desc" id="hc-prog-desc"></div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="hc-status" id="hc-status">Hover over a cell to see programme info</div>
+</div>
+
+<!-- Persistent video overlay — top-right, tied to channel select -->
+<div id="video-overlay">
+  <div class="vo-topbar">
+    <span class="vo-channel" id="vo-channel">—</span>
+    <div class="vo-btns">
+      <!-- PiP — global, for the selected channel's stream -->
+      <button class="hc-btn" id="vo-pip-btn" title="Picture-in-Picture" onclick="voTogglePiP()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="3" width="20" height="14" rx="2"/><rect x="11" y="10" width="9" height="7" rx="1" fill="currentColor" stroke="none"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+  <div class="vo-video-area">
+    <video id="vo-video" playsinline autoplay muted controlsList="nodownload"></video>
+    <div class="vo-spinner" id="vo-spinner">
+      <div class="vo-spinner-ring"></div>
+      <span>Loading stream…</span>
+    </div>
+    <div class="vo-stream-error" id="vo-stream-error" style="display:none">
+      <div class="err-icon">⚠</div>
+      <div class="err-msg" id="vo-err-msg">Stream unavailable</div>
+    </div>
+  </div>
+  <div class="vo-status" id="vo-status">Select a channel to watch live TV</div>
+</div>
+
+<footer>
+  Data sourced from tvpass.org &nbsp;|&nbsp;
+  Schedule runs every 2 days at 02:00 ET via cron &nbsp;|&nbsp;
+  <a href="/api/schedule">/api/schedule</a> &nbsp;
+  <a href="/api/channels">/api/channels</a>
+</footer>
+
+<script id="grid-data" type="application/json">
+{{ grid|tojson if grid else '{}' }}
+</script>
+
+<!-- HLS.js (minimal inline loader) -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
+
+<script>
+(function() {
+  /* ------------------------------------------------------------------ */
+  /*  Constants & state                                                  */
+  /* ------------------------------------------------------------------ */
+  const CHANNELS    = {{ channel_slugs|tojson }};
+  const CHAN_NAMES  = {{ channel_names|tojson }};
+  const ALL_DATES   = {{ all_dates|tojson }};
+  const HOURS       = {{ hours|tojson }};
+
+  const gridRaw = document.getElementById('grid-data').textContent;
+  let grid = {};
+  try { grid = JSON.parse(gridRaw); } catch(e) { console.error(e); }
+
+  let now = (() => {
+    // New York time (ET/EDT)
+    const ny = new Date(); // local
+    // Override with explicit UTC + NY offset
+    const utc = new Date();
+    // Use Intl to get NY time without external deps
+    return new Date(utc.toLocaleString("en-US", {timeZone: "America/New_York"}));
+  })();
+
+  function nyDate() {
+    // Returns today's date in New York as YYYY-MM-DD string
+    // We recompute each call so it stays current within the same minute
+    const utc = new Date();
+    const nyStr = utc.toLocaleString("en-US", {timeZone: "America/New_York",
+      year: "numeric", month: "2-digit", day: "2-digit"});
+    // en-US gives "05/03/2026" — parse back to YYYY-MM-DD
+    const [m, d, y] = nyStr.split("/");
+    return `${y}-${m}-${d}`;
+  }
+
+  function nyHour() {
+    const utc = new Date();
+    const nyHour = parseInt(utc.toLocaleString("en-US",
+      {timeZone: "America/New_York", hour: "2-digit", hour12: false}), 10);
+    return nyHour;
+  }
+
+  function nyMinsToday() {
+    // Minutes elapsed in New York today (0–1439)
+    const utc = new Date();
+    const h = parseInt(utc.toLocaleString("en-US",
+      {timeZone: "America/New_York", hour: "2-digit", hour12: false}), 10);
+    const m = utc.getUTCMinutes();
+    return h * 60 + m;
+  }
+
+  // slotPrograms is used by hover card for programme selector in each slot
+  let slotPrograms = [];
+
+  /* ------------------------------------------------------------------ */
+  /*  Utilities                                                          */
+  /* ------------------------------------------------------------------ */
+  function escHtml(s) {
+    return String(s||'')
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;');
+  }
+
+  function key(date, hour, ch) {
+    return `${date}||${String(hour).padStart(2,'0')}||${ch}`;
+  }
+
+  function isLive(startISO, endISO) {
+    if (!startISO) return false;
+    const s = new Date(startISO);
+    const e = endISO ? new Date(endISO) : new Date(s.getTime() + 3600*1000);
+    return s <= now && e >= now;
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return '--:--';
+    return new Date(iso).toISOString().slice(11,16);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Render cells                                                       */
+  /* ------------------------------------------------------------------ */
+  function renderCell(date, hour) {
+    const cell = document.getElementById(`c-${date}-${String(hour).padStart(2,'0')}`);
+    if (!cell) return;
+    const filter  = document.getElementById('ch-filter').value;
+    const visible = filter ? [filter] : CHANNELS;
+    const hourStr = String(hour).padStart(2,'0');
+    // Current-time column highlight (New York time)
+    const isNow = (date === nyDate() && hour === nyHour());
+    if (isNow) cell.classList.add('col-now');
+    else cell.classList.remove('col-now');
+    let html = '';
+    for (const ch of visible) {
+      const progs = grid[key(date, hourStr, ch)] || [];
+      for (const p of progs) {
+        const live = isLive(p.start_iso, p.end_iso);
+        if (live) liveCount++;
+        const liveCls = live ? ' live' : '';
+        html += `<div class="slot-program${liveCls}">
+  <div class="show">${escHtml(p.show)}</div>
+  ${p.episode ? `<div class="episode">${escHtml(p.episode)}</div>` : ''}
+  <div class="time">${fmtTime(p.start_iso)}–${fmtTime(p.end_iso)}</div>
+</div>`;
+      }
+    }
+    cell.innerHTML = html;
+    cell.classList.toggle('empty', !html);
+  }
+
+  function renderAll() {
+    liveCount = 0;
+    for (const date of ALL_DATES)
+      for (const hour of HOURS) renderCell(date, hour);
+    const lc = document.getElementById('live-count');
+    if (lc) lc.textContent = liveCount;
+  }
+
+  window.filterChannel = function(slug) {
+    renderAll();
+    const overlay = document.getElementById('video-overlay');
+    if (slug) {
+      overlay.classList.add('visible');
+      voLoadStream(slug);
+    } else {
+      overlay.classList.remove('visible');
+      voStopStream();
+    }
+  };
+
+  /* ------------------------------------------------------------------ */
+  /*  Now line (New York time)                                          */
+  /* ------------------------------------------------------------------ */
+  function positionNowLine() {
+    const wrapper = document.getElementById('grid-wrapper');
+    const line    = document.getElementById('now-line');
+    if (!wrapper || !line) return;
+
+    const table   = document.getElementById('tg');
+    const today   = nyDate();
+    const todayIdx = ALL_DATES.indexOf(today);
+
+    // Calculate the row index for the current hour
+    // HOURS = [0, 2, 4, 6, ... 22]; each row is one 2-hour slot
+    const currHour = nyHour();
+    // Find the largest HOUR <= currHour to get the slot row
+    let hourSlot = 0;
+    for (let i = 0; i < HOURS.length; i++) {
+      if (HOURS[i] <= currHour) hourSlot = i;
+    }
+
+    // Sum heights of all rows above this one
+    const tbody = table.querySelector('tbody');
+    const rows  = tbody ? tbody.querySelectorAll('tr') : [];
+    let rowTop = 0;
+    for (let i = 0; i < hourSlot && i < rows.length; i++) {
+      rowTop += rows[i].offsetHeight;
+    }
+
+    // Add the fraction within this 2-hour slot
+    const minsToday = nyMinsToday();
+    const slotFrac = (minsToday % 120) / 120;
+    const rowHeight = hourSlot < rows.length ? rows[hourSlot].offsetHeight : 50;
+    const topPx = rowTop + slotFrac * rowHeight;
+
+    const theadH = table.querySelector('thead') ? table.querySelector('thead').offsetHeight : 0;
+
+    line.style.top     = `${theadH + topPx}px`;
+    line.style.width   = '100%';
+    line.style.display = 'block';
+
+    const nyH = parseInt(new Date().toLocaleString('en-US',
+      {timeZone:'America/New_York',hour:'2-digit',hour12:false}),10);
+    const nyM = new Date().getUTCMinutes();
+    line.setAttribute('data-label',
+      `${String(nyH).padStart(2,'0')}:${String(nyM).padStart(2,'0')} ET`);
+  }
+
+  function refreshNowLine() {
+    const today   = nyDate();
+    const todayIdx = ALL_DATES.indexOf(today);
+    const line    = document.getElementById('now-line');
+    if (!line) return;
+    if (todayIdx === -1) { line.style.display = 'none'; return; }
+
+    const table = document.getElementById('tg');
+    const currHour = nyHour();
+    let hourSlot = 0;
+    for (let i = 0; i < HOURS.length; i++) {
+      if (HOURS[i] <= currHour) hourSlot = i;
+    }
+    const tbody = table.querySelector('tbody');
+    const rows  = tbody ? tbody.querySelectorAll('tr') : [];
+    let rowTop = 0;
+    for (let i = 0; i < hourSlot && i < rows.length; i++) {
+      rowTop += rows[i].offsetHeight;
+    }
+    const minsToday = nyMinsToday();
+    const slotFrac  = (minsToday % 120) / 120;
+    const rowHeight = hourSlot < rows.length ? rows[hourSlot].offsetHeight : 50;
+    const topPx = rowTop + slotFrac * rowHeight;
+    const theadH = table.querySelector('thead') ? table.querySelector('thead').offsetHeight : 0;
+
+    line.style.top     = `${theadH + topPx}px`;
+    line.style.width    = '100%';
+    line.style.display  = 'block';
+    const nyH = parseInt(new Date().toLocaleString('en-US',
+      {timeZone:'America/New_York',hour:'2-digit',hour12:false}),10);
+    const nyM = new Date().getUTCMinutes();
+    line.setAttribute('data-label',
+      `${String(nyH).padStart(2,'0')}:${String(nyM).padStart(2,'0')} ET`);
+  }
+
+  document.getElementById('grid-wrapper').addEventListener('scroll', refreshNowLine);
+
+  /* ------------------------------------------------------------------ */
+  /*  Hover card — position                                             */
+  /* ------------------------------------------------------------------ */
+  const hoverCard = document.getElementById('hover-card');
+
+  function positionCard(clientX, clientY) {
+    const cardW = 360, cardH = hoverCard.offsetHeight || 480;
+    let cx = clientX + 16;
+    let cy = clientY + 8;
+    if (cx + cardW > window.innerWidth - 8)  cx = clientX - cardW - 16;
+    if (cy + cardH > window.innerHeight - 8) cy = clientY - cardH - 8;
+    if (cy < 4)  cy = 4;
+    if (cx < 4)  cx = 4;
+    hoverCard.style.left = `${cx}px`;
+    hoverCard.style.top  = `${cy}px`;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Persistent video overlay — stream loading (top-right)              */
+  /* ------------------------------------------------------------------ */
+  let voHLS   = null;
+  let voSlug  = null;
+
+  function voStopStream() {
+    if (voHLS) { voHLS.destroy(); voHLS = null; }
+    const vid = document.getElementById('vo-video');
+    if (vid) { vid.pause(); vid.src = ''; vid.load(); }
+    voSlug = null;
+  }
+
+  function voShowSpinner() {
+    document.getElementById('vo-spinner').style.display = 'flex';
+    document.getElementById('vo-stream-error').style.display = 'none';
+  }
+  function voHideSpinner() {
+    document.getElementById('vo-spinner').style.display = 'none';
+  }
+  function voShowError(msg) {
+    document.getElementById('vo-spinner').style.display = 'none';
+    document.getElementById('vo-stream-error').style.display = 'flex';
+    document.getElementById('vo-err-msg').textContent = msg;
+  }
+
+  function voLoadStream(slug) {
+    voStopStream();
+    voSlug = slug;
+    document.getElementById('vo-channel').textContent = CHAN_NAMES[slug] || slug;
+    voShowSpinner();
+    const statusEl = document.getElementById('vo-status');
+    statusEl.textContent = `Connecting to ${CHAN_NAMES[slug] || slug}\u2026`;
+    statusEl.className = 'vo-status';
+
+    const vid = document.getElementById('vo-video');
+    fetch(`/api/stream/${encodeURIComponent(slug)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) {
+          voShowError(data.error);
+          statusEl.textContent = 'Stream unavailable';
+          statusEl.className = 'vo-status error';
+          return;
+        }
+        const m3u8 = data.url || data.m3u8;
+        if (Hls.isSupported()) {
+          const hls = new Hls({ startLevel: -1 });
+          hls.loadSource(m3u8);
+          hls.attachMedia(vid);
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            voHideSpinner();
+            vid.play().catch(() => {});
+            statusEl.textContent = `Playing: ${CHAN_NAMES[slug] || slug}`;
+            statusEl.className = 'vo-status';
+          });
+          hls.on(Hls.Events.ERROR, (e, d) => {
+            if (d.fatal) {
+              voShowError('Stream error');
+              statusEl.textContent = 'Stream error';
+              statusEl.className = 'vo-status error';
+            }
+          });
+          voHLS = hls;
+        } else if (vid.canPlayType('application/vnd.apple.mpegurl')) {
+          vid.src = m3u8;
+          voHideSpinner();
+          vid.play().catch(() => {});
+          statusEl.textContent = `Playing: ${CHAN_NAMES[slug] || slug}`;
+          statusEl.className = 'vo-status';
+        } else {
+          voShowError('No HLS support');
+          statusEl.textContent = 'HLS not supported';
+          statusEl.className = 'vo-status error';
+        }
+      })
+      .catch(err => {
+        voShowError('Connection failed');
+        statusEl.textContent = 'Connection failed';
+        statusEl.className = 'vo-status error';
+      });
+  }
+
+  window.voTogglePiP = function() {
+    const vid = document.getElementById('vo-video');
+    const btn = document.getElementById('vo-pip-btn');
+    if (!vid) return;
+    (async () => {
+      try {
+        if (document.pictureInPictureElement) {
+          await document.exitPictureInPicture();
+          btn.classList.remove('active');
+        } else if (document.pictureInPictureEnabled) {
+          await vid.requestPictureInPicture();
+          btn.classList.add('active');
+        }
+      } catch(e) { console.warn('PiP error:', e); }
+    })();
+  };
+
+  /* ------------------------------------------------------------------ */
+  /*  Hover card — programme info only (no video)                       */
+  /* ------------------------------------------------------------------ */
+
+  function updateProgInfo(prog, slug) {
+    const chName = CHAN_NAMES[slug] || slug;
+    document.getElementById('hc-channel-name').textContent = chName;
+    document.getElementById('hc-prog-show').textContent = prog ? (prog.show || '—') : '—';
+    document.getElementById('hc-prog-ep').textContent = prog && prog.episode ? prog.episode : '';
+    document.getElementById('hc-prog-time').textContent =
+      prog ? `${fmtTime(prog.start_iso)} – ${fmtTime(prog.end_iso)}` : '';
+    document.getElementById('hc-prog-desc').textContent = prog && prog.description ? prog.description : '';
+    const liveBadge = document.getElementById('hc-live-badge');
+    const live = prog && isLive(prog.start_iso, prog.end_iso);
+    liveBadge.style.display = live ? 'inline' : 'none';
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Hover card — show / hide / update (mouseover delegation)          */
+  /* ------------------------------------------------------------------ */
+  // Track the currently-displayed slot so we skip redundant updates
+  let _currentSlot = null;   // `${date}||${hourStr}`
+
+  function slotKeyFromCell(cell) {
+    const date = cell.dataset.date;
+    const hour = String(cell.dataset.hour).padStart(2,'0');
+    return `${date}||${hour}`;
+  }
+
+  function getCellAt(e) {
+    return e.target.closest ? e.target.closest('td.cell') : null;
+  }
+
+  function showHoverCard(cell, clientX, clientY) {
+    const date = cell.dataset.date;
+    const hourStr = cell.dataset.hour;
+    const hour = parseInt(hourStr, 10);
+    const filter  = document.getElementById('ch-filter').value;
+    const visible = filter ? [filter] : CHANNELS;
+
+    document.getElementById('hc-slot-info').textContent =
+      `${date} ${hourStr}:00 ET`;
+
+    // Collect all programmes in this slot
+    slotPrograms = [];
+    for (const ch of visible) {
+      const progs = grid[key(date, hourStr, ch)] || [];
+      for (const p of progs) slotPrograms.push({ ...p, _ch: ch });
+    }
+
+    // Populate dropdown if multiple programmes
+    const selectEl  = document.getElementById('hc-prog-dropdown');
+    const selectDiv = document.getElementById('hc-prog-select');
+    if (slotPrograms.length > 1) {
+      selectEl.innerHTML = slotPrograms.map((p, i) => {
+        const live = isLive(p.start_iso, p.end_iso);
+        const label = `${CHAN_NAMES[p._ch]||p._ch} — ${p.show||'—'} ${live?' [LIVE]':''}`;
+        return `<option value="${i}">${escHtml(label)}</option>`;
+      }).join('');
+      selectDiv.style.display = 'flex';
+      selectEl.selectedIndex = 0;
+    } else {
+      selectDiv.style.display = 'none';
+    }
+
+    if (slotPrograms.length === 0) {
+      // No programmes — show empty state
+      document.getElementById('hc-channel-name').textContent = filter ? (CHAN_NAMES[filter] || filter) : 'All Channels';
+      document.getElementById('hc-prog-show').textContent = 'No programmes in this slot';
+      document.getElementById('hc-prog-ep').textContent = '';
+      document.getElementById('hc-prog-time').textContent = '';
+      document.getElementById('hc-prog-desc').textContent = '';
+      document.getElementById('hc-live-badge').style.display = 'none';
+      document.getElementById('hc-status').textContent = 'Nothing scheduled in this slot';
+      document.getElementById('hc-status').className = 'hc-status';
+    } else {
+      // Show programme info for the hovered slot (no stream loading — stream is in the overlay)
+      const firstProg = slotPrograms[0];
+      updateProgInfo(firstProg, firstProg._ch);
+    }
+
+    // Always position and show the card (even for empty slots — shows the message)
+    positionCard(clientX, clientY);
+    hoverCard.classList.add('visible');
+  }
+
+  function hideHoverCard() {
+    hoverCard.classList.remove('visible');
+    _currentSlot = null;
+  }
+
+  // Programme selector in card
+  window.hcSelectProgram = function(idx) {
+    const p = slotPrograms[parseInt(idx)];
+    if (!p) return;
+    loadStream(p._ch, p);
+  };
+
+  /* ------------------------------------------------------------------ */
+  /*  Video controls                                                     */
+  /* ------------------------------------------------------------------ */
+  // (Fullscreen and PiP for hover card were removed — video lives in the overlay)
+  // hcSelectProgram still drives the hover card programme dropdown
+  window.hcSelectProgram = function(idx) {
+    const p = slotPrograms[parseInt(idx)];
+    if (!p) return;
+    // Update programme info only — stream is in the overlay, not the hover card
+    updateProgInfo(p, p._ch);
+  };
+
+  /* ------------------------------------------------------------------ */
+  /*  Event delegation — mouseover / mouseout on the grid wrapper        */
+  /* ------------------------------------------------------------------ */
+  const gridWrapper = document.getElementById('grid-wrapper');
+
+  gridWrapper.addEventListener('mouseover', (e) => {
+    const cell = getCellAt(e);
+    if (!cell) return;
+    const slot = slotKeyFromCell(cell);
+    // Always show + update content when hovering a different cell
+    // (even same slot — content may have changed via dropdown or tick)
+    _currentSlot = slot;
+    showHoverCard(cell, e.clientX, e.clientY);
+  });
+
+  // 200ms hide delay — gives mouse time to reach the floating card
+  let _hideTimer = null;
+  const HIDE_DELAY = 200;
+
+  gridWrapper.addEventListener('mouseout', (e) => {
+    // Moving to the hover card itself — don't start a hide timer
+    if (e.target.closest && e.target.closest('#hover-card')) return;
+    const to = e.relatedTarget;
+    // Still inside the grid wrapper (including individual cells)
+    if (to && to.closest && to.closest('#grid-wrapper')) return;
+    // Truly leaving — start the delayed hide
+    _hideTimer = setTimeout(() => {
+      hideHoverCard();
+    }, HIDE_DELAY);
+  });
+
+  // Mouse entering the card cancels the hide timer immediately
+  hoverCard.addEventListener('mouseenter', () => {
+    if (_hideTimer) { clearTimeout(_hideTimer); _hideTimer = null; }
+  });
+
+  /* ------------------------------------------------------------------ */
+  /*  Init                                                              */
+  /* ------------------------------------------------------------------ */
+  renderAll();
+  positionNowLine();
+
+  // Scroll the grid so the current day column is visible on load
+  requestAnimationFrame(() => {
+    const wrapper = document.getElementById('grid-wrapper');
+    const table  = document.getElementById('tg');
+    const today  = nyDate();
+    const todayIdx = ALL_DATES.indexOf(today);
+    if (todayIdx > 0 && table) {
+      // Estimate date column width (time-col + date col widths)
+      const timeCol = table.querySelector('th.time-col');
+      const dateColEls = table.querySelectorAll('th.date-col');
+      const timeColW = timeCol ? timeCol.offsetWidth : 64;
+      const dateColW  = (dateColEls.length > 0 && dateColEls[0].offsetWidth > 0)
+                        ? dateColEls[0].offsetWidth : 160;
+      // Scroll so today's column starts just inside the left edge
+      wrapper.scrollLeft = todayIdx * dateColW - timeColW;
+    }
+  });
+
+  /* ------------------------------------------------------------------ */
+  /*  Tick: update every minute without reload                           */
+  /* ------------------------------------------------------------------ */
+  setInterval(() => {
+    renderAll();
+    refreshNowLine();
+  }, 60000);
+
+})();
+</script>
+
+</body>
+</html>
