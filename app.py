@@ -93,6 +93,31 @@ def parse_iso(iso_str):
         return None
 
 
+def _ny_offset(dt_utc):
+    """
+    Return the New York UTC offset in hours for a given UTC datetime.
+    Handles EST (UTC-5) vs EDT (UTC-4) based on US DST rules.
+    """
+    # US DST: second Sunday March 2am local → first Sunday November 2am local
+    ny_dt = dt_utc.astimezone(_NY_TZ)
+    # The offset in hours is: UTC - local, so we get it from the tzinfo
+    total_secs = ny_dt.utcoffset().total_seconds()
+    return total_secs / 3600.0
+
+
+def to_ny(dt_utc):
+    """
+    Convert a UTC datetime to New York local time (naive, in NY timezone).
+    The Pi system clock is in ET/EST. dt_utc has a UTC tzinfo; subtract offset
+    to get the correct ET clock time.
+    UTC = ET + |offset|  →  ET = UTC - |offset|  →  ET = UTC + offset (offset is negative)
+    """
+    offset_hours = _ny_offset(dt_utc)
+    # offset_hours is negative (e.g. -4 for EDT). UTC + offset = ET.
+    ny_naive = dt_utc.replace(tzinfo=None) + timedelta(hours=offset_hours)
+    return ny_naive
+
+
 def slot_key(dt):
     """Return (date_str, hour) tuple for grouping."""
     if not dt:
@@ -134,8 +159,8 @@ def index():
         dt = parse_iso(p["start_iso"])
         if not dt:
             continue
-        # Convert UTC → New York
-        dt_ny = dt.astimezone(_NY_TZ)
+        # Convert UTC → New York using proper offset subtraction
+        dt_ny = to_ny(dt)
         date_str = dt_ny.strftime("%Y-%m-%d")
         hour = dt_ny.hour
         key = (date_str, hour)

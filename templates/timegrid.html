@@ -112,10 +112,18 @@
       background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 600;
       text-align: right; padding: 6px 10px; white-space: nowrap;
       width: 64px; min-width: 64px;
+      position: sticky; left: 0; z-index: 10;
+    }
+    .timegrid td.time-col {
+      background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 600;
+      text-align: right; padding: 6px 10px; white-space: nowrap;
+      width: 64px; min-width: 64px;
+      position: sticky; left: 0; z-index: 10;
     }
     .timegrid th.date-col {
       background: var(--surface); color: var(--text); font-size: 12px; font-weight: 600;
       text-align: center; padding: 8px 12px; white-space: nowrap; min-width: 160px;
+      position: sticky; top: 0; z-index: 5;
     }
     .timegrid th.date-col.today { color: var(--accent); border-bottom: 2px solid var(--accent); }
     .timegrid td.cell.col-now, .timegrid td.cell.col-now .slot-program { background: var(--col-now); }
