@@ -175,10 +175,10 @@ def index():
     sorted_slots = sorted(by_slot.keys())  # (date, hour)
 
     # Collect all unique dates that appear (in NY time)
-    all_dates = sorted(set(s for s, _ in sorted_slots))
-
-    # The current date in New York (may differ from UTC date in early morning hours)
+    # Today's date (NY) always comes first; subsequent dates follow in order
     today_ny = ny_now().strftime("%Y-%m-%d")
+    unique_dates = sorted(set(s for s, _ in sorted_slots))
+    all_dates = [today_ny] + [d for d in unique_dates if d != today_ny]
 
     # Time labels (e.g. "00:00", "02:00", ... every 2 hours)
     hours = list(range(0, 24, 2))
@@ -252,6 +252,13 @@ def health():
     """Health check endpoint."""
     master = load_master()
     return {"status": "ok" if master else "no_data", "generated_at": master.get("generated_at") if master else None}
+
+
+@app.route("/favicon.ico")
+def favicon():
+    """Serve favicon."""
+    from flask import send_from_directory
+    return send_from_directory(Path(__file__).parent / "templates", "favicon.ico", mimetype="image/x-icon")
 
 
 # -----------------------------------------------------------------------------

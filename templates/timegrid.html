@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TV Schedule Timegrid — TVPass</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
   <style>
     :root {
       --bg: #0f1117;
@@ -75,7 +76,7 @@
       position: relative;
     }
 
-    /* ---- Now line — horizontal bar at current time row ---- */
+    /* ---- Now line — absolutely positioned within the grid-wrapper ---- */
     #now-line {
       position: absolute;
       left: 0;
@@ -83,7 +84,6 @@
       background: var(--live);
       z-index: 30;
       pointer-events: none;
-      transform: translateY(-50%);
       box-shadow: 0 0 8px var(--live);
       width: 100%;
     }
@@ -293,12 +293,12 @@
     }
     .hc-status.error { color: var(--live); }
 
-    /* ---- Persistent video overlay — top-right ---- */
+    /* ---- Persistent video overlay — top-right, movable ---- */
     #video-overlay {
       display: none;
       position: fixed;
-      top: 8px;
-      right: 8px;
+      top: 80px;
+      right: 16px;
       width: 280px;
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -307,6 +307,7 @@
       z-index: 300;
       overflow: hidden;
       flex-direction: column;
+      cursor: move;
     }
     #video-overlay.visible { display: flex; }
 
@@ -409,7 +410,7 @@
 <div class="channel-filter">
   <label for="ch-filter">Filter channel:</label>
   <select id="ch-filter" onchange="filterChannel(this.value)">
-    <option value="">— All channels —</option>
+    <option value="" selected>— All channels —</option>
     {% for slug in channel_slugs %}
     <option value="{{ slug }}">{{ channel_names.get(slug, slug) }}</option>
     {% endfor %}
@@ -536,39 +537,71 @@
   let grid = {};
   try { grid = JSON.parse(gridRaw); } catch(e) { console.error(e); }
 
-  let now = (() => {
-    // New York time (ET/EDT)
-    const ny = new Date(); // local
-    // Override with explicit UTC + NY offset
-    const utc = new Date();
-    // Use Intl to get NY time without external deps
-    return new Date(utc.toLocaleString("en-US", {timeZone: "America/New_York"}));
-  })();
+  /* Return a UTC-based Date representing the current New York (ET/EDT) wall-clock time.
+     The returned Date is in UTC milliseconds so it can be safely compared against
+     other UTC-based Date objects (e.g. from ISO strings like "2026-05-05T14:00:00Z").
+     Strategy: extract the NY wall-clock time via Intl, compute the NY→UTC offset
+     by comparing the same instant formatted in both UTC and NY zones, then add
+     that offset to the NY hour to get the equivalent UTC instant.
+     e.g. UTC 21:37 = NY 17:37 in EDT → offset = 240 min → UTC = NY + 4h */
+  function getNYOffsetMinutes() {
+    const now = new Date();
+    const utcStr = now.toLocaleString("en-US", {timeZone:"UTC", year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false});
+    const nyStr  = now.toLocaleString("en-US", {timeZone:"America/New_York", year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false});
+    const u = utcStr.split(/[\/\s:,]+/);
+    const n = nyStr.split(/[\/\s:,]+/);
+    return (+u[3] - +n[3]) * 60 + (+u[4] - +n[4]);
+  }
 
+  function getNowNY() {
+    const utc = new Date();
+    const parts = utc.toLocaleString("en-US", {
+      timeZone: "America/New_York",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+    }).split(/[\/\s:,]+/);
+    // offsetMinutes > 0 means UTC is ahead of NY (e.g. UTC-4 EDT = +240)
+    const offsetMinutes = getNYOffsetMinutes();
+    const utcHour = +parts[3] + offsetMinutes / 60;   // ADD offset → convert NY to UTC
+    return new Date(Date.UTC(+parts[2], +parts[0]-1, +parts[1],
+                             utcHour, +parts[4], +parts[5]));
+  }
+
+  // Cached "now" — refreshed every 60 s. Used by isLive() where stale-by-up-to-1min is acceptable.
+  let _nowCache = { t: 0, v: null };
+  function nowNY() {
+    const t = Date.now();
+    if (t - _nowCache.t > 60000 || !_nowCache.v) {
+      _nowCache.t = t;
+      _nowCache.v = getNowNY();
+    }
+    return _nowCache.v;
+  }
+
+  // Always-fresh NY date string — for determining the current time slot (col-now, now-line label).
+  // NOT cached because the displayed slot changes every minute.
   function nyDate() {
-    // Returns today's date in New York as YYYY-MM-DD string
-    // We recompute each call so it stays current within the same minute
-    const utc = new Date();
-    const nyStr = utc.toLocaleString("en-US", {timeZone: "America/New_York",
-      year: "numeric", month: "2-digit", day: "2-digit"});
-    // en-US gives "05/03/2026" — parse back to YYYY-MM-DD
-    const [m, d, y] = nyStr.split("/");
-    return `${y}-${m}-${d}`;
+    const now = new Date();
+    const parts = now.toLocaleString("en-US", {
+      timeZone: "America/New_York",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+    }).split(/[\/\s:,]+/);
+    return `${parts[2]}-${parts[0]}-${parts[1]}`;
   }
 
+  // Always-fresh NY hour (0-23) — for determining the current 2-hour slot.
   function nyHour() {
-    const utc = new Date();
-    const nyHour = parseInt(utc.toLocaleString("en-US",
-      {timeZone: "America/New_York", hour: "2-digit", hour12: false}), 10);
-    return nyHour;
+    return parseInt(new Date().toLocaleString("en-US", {
+      timeZone: "America/New_York",
+      hour: "2-digit", hour12: false
+    }), 10);
   }
 
+  // Minutes-since-midnight in NY — always fresh for now-line fractional positioning.
   function nyMinsToday() {
-    // Minutes elapsed in New York today (0–1439)
-    const utc = new Date();
-    const h = parseInt(utc.toLocaleString("en-US",
-      {timeZone: "America/New_York", hour: "2-digit", hour12: false}), 10);
-    const m = utc.getUTCMinutes();
+    const h = nyHour();
+    const m = new Date().getUTCMinutes();
     return h * 60 + m;
   }
 
@@ -594,12 +627,18 @@
     if (!startISO) return false;
     const s = new Date(startISO);
     const e = endISO ? new Date(endISO) : new Date(s.getTime() + 3600*1000);
+    const now = nowNY();   // UTC-based Date representing current NY time
     return s <= now && e >= now;
   }
 
   function fmtTime(iso) {
     if (!iso) return '--:--';
-    return new Date(iso).toISOString().slice(11,16);
+    // Convert UTC ISO string to a Date, then format it in New York time
+    const d = new Date(iso);
+    return d.toLocaleString("en-US", {
+      timeZone: "America/New_York",
+      hour: "2-digit", minute: "2-digit", hour12: false
+    });
   }
 
   /* ------------------------------------------------------------------ */
@@ -611,8 +650,13 @@
     const filter  = document.getElementById('ch-filter').value;
     const visible = filter ? [filter] : CHANNELS;
     const hourStr = String(hour).padStart(2,'0');
-    // Current-time column highlight (New York time)
-    const isNow = (date === nyDate() && hour === nyHour());
+    // Current-time column highlight: this cell's hour slot contains the current NY hour
+    const currHour = nyHour();
+    let currHourSlot = 0;
+    for (let i = 0; i < HOURS.length; i++) {
+      if (HOURS[i] <= currHour) currHourSlot = i;
+    }
+    const isNow = (date === nyDate() && hour === HOURS[currHourSlot]);
     if (isNow) cell.classList.add('col-now');
     else cell.classList.remove('col-now');
     let html = '';
@@ -654,44 +698,37 @@
   };
 
   /* ------------------------------------------------------------------ */
-  /*  Now line (New York time)                                          */
+  /*  Now line (New York time, position: fixed, full viewport width)     */
   /* ------------------------------------------------------------------ */
   function positionNowLine() {
-    const wrapper = document.getElementById('grid-wrapper');
-    const line    = document.getElementById('now-line');
-    if (!wrapper || !line) return;
+    const line = document.getElementById('now-line');
+    if (!line) return;
 
-    const table   = document.getElementById('tg');
-    const today   = nyDate();
-    const todayIdx = ALL_DATES.indexOf(today);
+    const table = document.getElementById('tg');
+    const thead = table ? table.querySelector('thead') : null;
+    const theadH = thead ? thead.offsetHeight : 0;
 
-    // Calculate the row index for the current hour
-    // HOURS = [0, 2, 4, 6, ... 22]; each row is one 2-hour slot
+    // Find current NY hour slot
     const currHour = nyHour();
-    // Find the largest HOUR <= currHour to get the slot row
     let hourSlot = 0;
     for (let i = 0; i < HOURS.length; i++) {
       if (HOURS[i] <= currHour) hourSlot = i;
     }
 
-    // Sum heights of all rows above this one
-    const tbody = table.querySelector('tbody');
-    const rows  = tbody ? tbody.querySelectorAll('tr') : [];
-    let rowTop = 0;
-    for (let i = 0; i < hourSlot && i < rows.length; i++) {
-      rowTop += rows[i].offsetHeight;
-    }
-
-    // Add the fraction within this 2-hour slot
+    // Sum heights of all rows ABOVE the current hour slot using their actual offsetTop.
+    // Using rows[hourSlot].offsetTop directly avoids accumulated height discrepancies.
+    const tbody = table ? table.querySelector('tbody') : null;
+    const rows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
+    // offsetTop of the current-hour row (accumulated by the browser layout engine)
+    const rowTopPx = hourSlot < rows.length ? rows[hourSlot].offsetTop : 0;
+    const rowHeight = hourSlot < rows.length ? rows[hourSlot].offsetHeight : 50;
+    // Fraction within the current 2-hour slot
     const minsToday = nyMinsToday();
     const slotFrac = (minsToday % 120) / 120;
-    const rowHeight = hourSlot < rows.length ? rows[hourSlot].offsetHeight : 50;
-    const topPx = rowTop + slotFrac * rowHeight;
+    const withinRowPx = slotFrac * rowHeight;
 
-    const theadH = table.querySelector('thead') ? table.querySelector('thead').offsetHeight : 0;
-
-    line.style.top     = `${theadH + topPx}px`;
-    line.style.width   = '100%';
+    // top is relative to the grid-wrapper top (the table header sticks to top on scroll)
+    line.style.top = `${theadH + rowTopPx + withinRowPx}px`;
     line.style.display = 'block';
 
     const nyH = parseInt(new Date().toLocaleString('en-US',
@@ -699,36 +736,47 @@
     const nyM = new Date().getUTCMinutes();
     line.setAttribute('data-label',
       `${String(nyH).padStart(2,'0')}:${String(nyM).padStart(2,'0')} ET`);
+
+    // Auto-center the now-line row in the viewport
+    const wrapper = document.getElementById('grid-wrapper');
+    if (wrapper) {
+      const slotCenter = theadH + rowTopPx + rowHeight / 2;
+      const viewportH = window.innerHeight;
+      const scrollTarget = Math.max(0, slotCenter - viewportH / 2);
+      wrapper.scrollTop = scrollTarget;
+    }
   }
 
   function refreshNowLine() {
-    const today   = nyDate();
-    const todayIdx = ALL_DATES.indexOf(today);
-    const line    = document.getElementById('now-line');
+    const line = document.getElementById('now-line');
     if (!line) return;
+
+    const today = nyDate();
+    const todayIdx = ALL_DATES.indexOf(today);
     if (todayIdx === -1) { line.style.display = 'none'; return; }
 
     const table = document.getElementById('tg');
+    const thead = table ? table.querySelector('thead') : null;
+    const theadH = thead ? thead.offsetHeight : 0;
+
     const currHour = nyHour();
     let hourSlot = 0;
     for (let i = 0; i < HOURS.length; i++) {
       if (HOURS[i] <= currHour) hourSlot = i;
     }
-    const tbody = table.querySelector('tbody');
-    const rows  = tbody ? tbody.querySelectorAll('tr') : [];
-    let rowTop = 0;
-    for (let i = 0; i < hourSlot && i < rows.length; i++) {
-      rowTop += rows[i].offsetHeight;
-    }
-    const minsToday = nyMinsToday();
-    const slotFrac  = (minsToday % 120) / 120;
-    const rowHeight = hourSlot < rows.length ? rows[hourSlot].offsetHeight : 50;
-    const topPx = rowTop + slotFrac * rowHeight;
-    const theadH = table.querySelector('thead') ? table.querySelector('thead').offsetHeight : 0;
 
-    line.style.top     = `${theadH + topPx}px`;
-    line.style.width    = '100%';
-    line.style.display  = 'block';
+    // Use the row's actual offsetTop to avoid accumulated-height discrepancies
+    const tbody = table ? table.querySelector('tbody') : null;
+    const rows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
+    const rowTopPx = hourSlot < rows.length ? rows[hourSlot].offsetTop : 0;
+    const rowHeight = hourSlot < rows.length ? rows[hourSlot].offsetHeight : 50;
+    const minsToday = nyMinsToday();
+    const slotFrac = (minsToday % 120) / 120;
+    const withinRowPx = slotFrac * rowHeight;
+
+    line.style.top = `${theadH + rowTopPx + withinRowPx}px`;
+    line.style.display = 'block';
+
     const nyH = parseInt(new Date().toLocaleString('en-US',
       {timeZone:'America/New_York',hour:'2-digit',hour12:false}),10);
     const nyM = new Date().getUTCMinutes();
@@ -760,6 +808,61 @@
   /* ------------------------------------------------------------------ */
   let voHLS   = null;
   let voSlug  = null;
+
+  /* ------------------------------------------------------------------ */
+  /*  Draggable video overlay                                            */
+  /* ------------------------------------------------------------------ */
+  (function() {
+    const overlay = document.getElementById('video-overlay');
+    if (!overlay) return;
+    let dragging = false, dragOffX = 0, dragOffY = 0;
+
+    overlay.addEventListener('mousedown', (e) => {
+      // Only drag from the topbar area
+      if (e.target.closest('.vo-topbar') || e.target === overlay) {
+        dragging = true;
+        dragOffX = e.clientX - overlay.offsetLeft;
+        dragOffY = e.clientY - overlay.offsetTop;
+        overlay.style.cursor = 'grabbing';
+        e.preventDefault();
+      }
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      let nx = e.clientX - dragOffX;
+      let ny = e.clientY - dragOffY;
+      // Keep within viewport
+      nx = Math.max(0, Math.min(nx, window.innerWidth - overlay.offsetWidth));
+      ny = Math.max(0, Math.min(ny, window.innerHeight - overlay.offsetHeight));
+      overlay.style.left = nx + 'px';
+      overlay.style.top  = ny + 'px';
+      overlay.style.right = 'auto';
+    });
+    document.addEventListener('mouseup', () => {
+      if (dragging) { dragging = false; overlay.style.cursor = 'move'; }
+    });
+    // Touch support
+    overlay.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      dragging = true;
+      dragOffX = t.clientX - overlay.offsetLeft;
+      dragOffY = t.clientY - overlay.offsetTop;
+      e.preventDefault();
+    }, { passive: false });
+    document.addEventListener('touchmove', (e) => {
+      if (!dragging) return;
+      const t = e.touches[0];
+      let nx = t.clientX - dragOffX;
+      let ny = t.clientY - dragOffY;
+      nx = Math.max(0, Math.min(nx, window.innerWidth - overlay.offsetWidth));
+      ny = Math.max(0, Math.min(ny, window.innerHeight - overlay.offsetHeight));
+      overlay.style.left = nx + 'px';
+      overlay.style.top  = ny + 'px';
+      overlay.style.right = 'auto';
+    }, { passive: false });
+    document.addEventListener('touchend', () => { dragging = false; });
+    overlay.style.cursor = 'move';
+  })();
 
   function voStopStream() {
     if (voHLS) { voHLS.destroy(); voHLS = null; }
