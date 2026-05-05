@@ -341,6 +341,11 @@
       width: 100%; height: 100%; display: block; object-fit: contain;
     }
 
+    /* Force native controls to always show, not just on hover */
+    .vo-video-area video::-webkit-media-controls {
+      display: flex !important;
+    }
+
     /* Spinner / error */
     .vo-spinner {
       position: absolute; inset: 0;
@@ -410,7 +415,8 @@
 <div class="channel-filter">
   <label for="ch-filter">Filter channel:</label>
   <select id="ch-filter" onchange="filterChannel(this.value)">
-    <option value="" selected>— All channels —</option>
+    <option value="" selected>— No channel selected —</option>
+    <option value="__all__">— All channels —</option>
     {% for slug in channel_slugs %}
     <option value="{{ slug }}">{{ channel_names.get(slug, slug) }}</option>
     {% endfor %}
@@ -496,7 +502,7 @@
     </div>
   </div>
   <div class="vo-video-area">
-    <video id="vo-video" playsinline autoplay muted controlsList="nodownload"></video>
+    <video id="vo-video" playsinline autoplay muted controls controlsList="nodownload"></video>
     <div class="vo-spinner" id="vo-spinner">
       <div class="vo-spinner-ring"></div>
       <span>Loading stream…</span>
@@ -648,7 +654,7 @@
     const cell = document.getElementById(`c-${date}-${String(hour).padStart(2,'0')}`);
     if (!cell) return;
     const filter  = document.getElementById('ch-filter').value;
-    const visible = filter ? [filter] : CHANNELS;
+    const visible = filter === "" ? [] : filter === "__all__" ? CHANNELS : [filter];
     const hourStr = String(hour).padStart(2,'0');
     // Current-time column highlight: this cell's hour slot contains the current NY hour
     const currHour = nyHour();
@@ -687,8 +693,9 @@
 
   window.filterChannel = function(slug) {
     renderAll();
+    positionNowLine();
     const overlay = document.getElementById('video-overlay');
-    if (slug) {
+    if (slug && slug !== '__all__') {
       overlay.classList.add('visible');
       voLoadStream(slug);
     } else {
@@ -698,56 +705,9 @@
   };
 
   /* ------------------------------------------------------------------ */
-  /*  Now line (New York time, position: fixed, full viewport width)     */
+  /*  Now line (New York time, position: absolute, grid-wrapper height)  */
   /* ------------------------------------------------------------------ */
   function positionNowLine() {
-    const line = document.getElementById('now-line');
-    if (!line) return;
-
-    const table = document.getElementById('tg');
-    const thead = table ? table.querySelector('thead') : null;
-    const theadH = thead ? thead.offsetHeight : 0;
-
-    // Find current NY hour slot
-    const currHour = nyHour();
-    let hourSlot = 0;
-    for (let i = 0; i < HOURS.length; i++) {
-      if (HOURS[i] <= currHour) hourSlot = i;
-    }
-
-    // Sum heights of all rows ABOVE the current hour slot using their actual offsetTop.
-    // Using rows[hourSlot].offsetTop directly avoids accumulated height discrepancies.
-    const tbody = table ? table.querySelector('tbody') : null;
-    const rows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
-    // offsetTop of the current-hour row (accumulated by the browser layout engine)
-    const rowTopPx = hourSlot < rows.length ? rows[hourSlot].offsetTop : 0;
-    const rowHeight = hourSlot < rows.length ? rows[hourSlot].offsetHeight : 50;
-    // Fraction within the current 2-hour slot
-    const minsToday = nyMinsToday();
-    const slotFrac = (minsToday % 120) / 120;
-    const withinRowPx = slotFrac * rowHeight;
-
-    // top is relative to the grid-wrapper top (the table header sticks to top on scroll)
-    line.style.top = `${theadH + rowTopPx + withinRowPx}px`;
-    line.style.display = 'block';
-
-    const nyH = parseInt(new Date().toLocaleString('en-US',
-      {timeZone:'America/New_York',hour:'2-digit',hour12:false}),10);
-    const nyM = new Date().getUTCMinutes();
-    line.setAttribute('data-label',
-      `${String(nyH).padStart(2,'0')}:${String(nyM).padStart(2,'0')} ET`);
-
-    // Auto-center the now-line row in the viewport
-    const wrapper = document.getElementById('grid-wrapper');
-    if (wrapper) {
-      const slotCenter = theadH + rowTopPx + rowHeight / 2;
-      const viewportH = window.innerHeight;
-      const scrollTarget = Math.max(0, slotCenter - viewportH / 2);
-      wrapper.scrollTop = scrollTarget;
-    }
-  }
-
-  function refreshNowLine() {
     const line = document.getElementById('now-line');
     if (!line) return;
 
@@ -756,8 +716,8 @@
     if (todayIdx === -1) { line.style.display = 'none'; return; }
 
     const table = document.getElementById('tg');
-    const thead = table ? table.querySelector('thead') : null;
-    const theadH = thead ? thead.offsetHeight : 0;
+    const tbody = table ? table.querySelector('tbody') : null;
+    const rows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
 
     const currHour = nyHour();
     let hourSlot = 0;
@@ -765,16 +725,13 @@
       if (HOURS[i] <= currHour) hourSlot = i;
     }
 
-    // Use the row's actual offsetTop to avoid accumulated-height discrepancies
-    const tbody = table ? table.querySelector('tbody') : null;
-    const rows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
     const rowTopPx = hourSlot < rows.length ? rows[hourSlot].offsetTop : 0;
     const rowHeight = hourSlot < rows.length ? rows[hourSlot].offsetHeight : 50;
     const minsToday = nyMinsToday();
     const slotFrac = (minsToday % 120) / 120;
-    const withinRowPx = slotFrac * rowHeight;
 
-    line.style.top = `${theadH + rowTopPx + withinRowPx}px`;
+    // offsetTop is already relative to the table content (after thead), no theadH offset needed
+    line.style.top = `${rowTopPx + slotFrac * rowHeight}px`;
     line.style.display = 'block';
 
     const nyH = parseInt(new Date().toLocaleString('en-US',
@@ -783,8 +740,6 @@
     line.setAttribute('data-label',
       `${String(nyH).padStart(2,'0')}:${String(nyM).padStart(2,'0')} ET`);
   }
-
-  document.getElementById('grid-wrapper').addEventListener('scroll', refreshNowLine);
 
   /* ------------------------------------------------------------------ */
   /*  Hover card — position                                             */
@@ -996,7 +951,7 @@
     const hourStr = cell.dataset.hour;
     const hour = parseInt(hourStr, 10);
     const filter  = document.getElementById('ch-filter').value;
-    const visible = filter ? [filter] : CHANNELS;
+    const visible = filter === "" ? [] : filter === "__all__" ? CHANNELS : [filter];
 
     document.getElementById('hc-slot-info').textContent =
       `${date} ${hourStr}:00 ET`;
