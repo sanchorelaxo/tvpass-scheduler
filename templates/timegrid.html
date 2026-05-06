@@ -46,28 +46,25 @@
     }
     header .brand { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: -0.3px; }
     header .brand span { color: var(--muted); font-weight: 400; }
-    .header-meta { display: flex; gap: 20px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+    .header-meta { display: flex; gap: 20px; font-size: 12px; color: var(--muted); flex-wrap: wrap; align-items: center; }
     .header-meta strong { color: var(--text); }
     .header-meta .live-dot {
       display: inline-block; width: 8px; height: 8px; border-radius: 50%;
       background: var(--live); margin-right: 4px; animation: pulse 1.5s infinite;
     }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-    .channel-filter {
-      padding: 10px 24px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      overflow-x: auto;
-      white-space: nowrap;
-    }
-    .channel-filter label { color: var(--muted); font-size: 12px; }
-    .channel-filter select {
+    .header-channel-filter { display: flex; align-items: center; gap: 8px; }
+    .header-channel-filter label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .header-channel-filter select {
       background: var(--surface2); color: var(--text); border: 1px solid var(--border);
       border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer;
+      max-width: 240px;
     }
+    .header-logo { display: flex; align-items: center; }
+    .header-logo img { height: 96px; width: auto; display: block; }
+    .header-left { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+    .header-center { display: flex; align-items: center; }
+    .header-right { display: flex; align-items: center; }
 
     /* ---- Grid wrapper ---- */
     .grid-wrapper {
@@ -402,26 +399,34 @@
 <body>
 
 <header>
-  <div class="brand">TVPass <span>/ Schedule Timegrid</span></div>
-  <div class="header-meta">
-    <span>Programs: <strong>{{ program_count }}</strong></span>
-    <span>Channels: <strong>{{ channel_slugs|length }}</strong></span>
-    <span>Scrape run: <strong>#{{ scrape_count }}</strong></span>
-    <span>Last updated: <strong>{{ last_scrape[:16] if last_scrape else '—' }}</strong></span>
-    <span>Generated: <strong>{{ now_utc }}</strong></span>
+  <div class="header-left">
+    <div class="brand">TVPass <span>/ Schedule Timegrid</span></div>
+    <div class="header-meta">
+      <span>Programs: <strong>{{ program_count }}</strong></span>
+      <span>Channels: <strong>{{ channel_slugs|length }}</strong></span>
+      <span>Scrape run: <strong>#{{ scrape_count }}</strong></span>
+      <span>Last updated: <strong>{{ last_scrape[:16] if last_scrape else '—' }}</strong></span>
+      <span>Generated: <strong>{{ now_utc }}</strong></span>
+    </div>
+  </div>
+  <div class="header-center">
+    <div class="header-channel-filter">
+      <label for="ch-filter">Filter channel:</label>
+      <select id="ch-filter">
+        <option value="" selected>— No channel selected —</option>
+        <option value="__all__">— All channels —</option>
+        {% for slug in channel_slugs %}
+        <option value="{{ slug }}">{{ channel_names.get(slug, slug) }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="header-logo">
+      <img src="/static/tvpass_logo.png" alt="TVPass">
+    </div>
   </div>
 </header>
-
-<div class="channel-filter">
-  <label for="ch-filter">Filter channel:</label>
-  <select id="ch-filter" onchange="filterChannel(this.value)">
-    <option value="" selected>— No channel selected —</option>
-    <option value="__all__">— All channels —</option>
-    {% for slug in channel_slugs %}
-    <option value="{{ slug }}">{{ channel_names.get(slug, slug) }}</option>
-    {% endfor %}
-  </select>
-</div>
 
 <div class="grid-wrapper" id="grid-wrapper">
   <div id="now-line" data-label=""></div>
@@ -1088,8 +1093,15 @@
   /* ------------------------------------------------------------------ */
   setInterval(() => {
     renderAll();
-    refreshNowLine();
+    positionNowLine();
   }, 60000);
+
+  /* ------------------------------------------------------------------ */
+  /*  Channel filter — bound after DOM is ready                         */
+  /* ------------------------------------------------------------------ */
+  document.getElementById('ch-filter').addEventListener('change', function() {
+    filterChannel(this.value);
+  });
 
 })();
 </script>

@@ -51,7 +51,7 @@ def get_stream_session():
     return _stream_session
 
 
-app = Flask(__name__, template_folder=Path(__file__).parent / "templates")
+app = Flask(__name__, template_folder=Path(__file__).parent / "templates", static_folder=Path(__file__).parent / "static")
 
 
 # -----------------------------------------------------------------------------
