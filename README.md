@@ -66,35 +66,41 @@ The channel dropdown has three modes:
 
 ---
 
-## Cron Job — Auto-Scrape Every 2 Days
+## Systemd Service — HTTP Server + Auto-Scrape
 
-The scraper should run on a schedule to keep schedules current. On the Pi, edit your crontab:
+The HTTP server and scraper are managed via systemd. Both unit files are in the repo and installed on the Pi.
 
-```bash
-crontab -e
-```
-
-Add this line:
-
-```
-0 2 */2 * * /usr/bin/python3 /home/sanchobot/tvpass-scheduler/scraper.py >> /home/sanchobot/tvpass-scheduler/scrape.log 2>&1
-```
-
-This runs the scraper every 2 days at 02:00 UTC (which is ~22:00 EDT / 23:00 EST).
-
-**Note:** The cron entry in `cron.sh` is commented out by default. Uncomment it in your crontab to activate.
-
-The scraper:
-- Fetches all 177 channel schedules from tvpass.org
-- Diffs against previous state (APPEND / AMEND / REMOVE)
-- Saves to `scrape_state.json` + `master_schedule.json`
-- Produces a change summary (`+N ~M -R`) in `scrape.log`
-
-To manually trigger a scrape:
+### HTTP Server (`tvpass.service`)
 
 ```bash
-python3 scraper.py
+sudo systemctl start tvpass    # start
+sudo systemctl stop tvpass     # stop
+sudo systemctl restart tvpass # restart after app.py / template changes
+sudo systemctl status tvpass
 ```
+
+Enabled to start on boot automatically.
+
+### Auto-Scraper Timer (`tvpass-scrape.timer`)
+
+Triggers a full scrape every 4 hours, starting 5 min after boot.
+
+```bash
+sudo systemctl start tvpass-scrape.timer   # enable / resume scheduling
+sudo systemctl stop tvpass-scrape.timer    # pause scheduling
+sudo systemctl status tvpass-scrape.timer
+systemctl list-timers tvpass-scrape.timer  # see next run time
+```
+
+### Manual Scrape
+
+```bash
+sudo systemctl start tvpass-scrape.service   # one-shot scrape now (~10 min)
+sudo tvpass-scrape                            # same via wrapper script
+sudo tvpass-scrape --dry-run                 # preview, no writes
+```
+
+Scrape logs go to `scrape.log` in this directory.
 
 ---
 
